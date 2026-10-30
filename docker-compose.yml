@@ -1,0 +1,21 @@
+# Local run with Postgres: docker compose up --build   →  http://localhost:3000
+services:
+  app:
+    build: .
+    ports: ["3000:3000"]
+    environment:
+      BASE_URL: http://localhost:3000
+      ADMIN_KEY: demo-admin-key
+      STORE_KEY: driveproof-test-store-key
+      DATABASE_URL: postgres://driveproof:driveproof@db:5432/postgres
+    depends_on:
+      db: { condition: service_healthy }
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: driveproof
+      POSTGRES_PASSWORD: driveproof
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U driveproof"]
+      interval: 3s
+      retries: 20

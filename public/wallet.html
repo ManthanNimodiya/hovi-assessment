@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo wallet · DriveProof</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top" id="nav"></header>
+<main class="wrap">
+  <h1>Demo wallet</h1>
+  <p class="lead">A simple holder wallet built with Credo, so the flow can be tested without a phone. It receives credentials
+    with OpenID4VCI and presents them with OpenID4VP. Real EUDI wallets (e.g. Hovi Wallet) can use the same QR codes.</p>
+
+  <div class="card" id="offerCard" hidden>
+    <h2>A licence office is offering you a credential</h2>
+    <label for="pin">PIN (shown by the licence office)</label>
+    <input type="text" id="pin" inputmode="numeric" autocomplete="off" style="max-width:200px">
+    <p class="error" id="offerError"></p>
+    <button id="acceptOffer">Add to wallet</button>
+  </div>
+
+  <div class="card" id="requestCard" hidden>
+    <h2 id="requestTitle">Share your licence?</h2>
+    <p id="requestWho"></p>
+    <p>It asks for: <span id="requestClaims"></span></p>
+    <label>Choose the licence to share</label>
+    <div id="choices"></div>
+    <p class="error" id="requestError"></p>
+    <button id="share">Share</button>
+    <button class="secondary" id="decline">Decline</button>
+  </div>
+
+  <div class="card" id="pasteCard">
+    <h2>Paste a link</h2>
+    <p class="hint">Paste an <span class="mono">openid-credential-offer://</span> or <span class="mono">openid4vp://</span> link.</p>
+    <div class="row"><input type="text" id="paste"><button id="pasteGo" style="flex:0">Open</button></div>
+  </div>
+
+  <h2>My credentials</h2>
+  <div class="grid" id="creds"><p class="hint">Loading…</p></div>
+</main>
+<script type="module">
+  import { $, api, esc, nav } from '/common.js';
+  $('#nav').innerHTML = nav('/wallet');
+
+  const params = new URLSearchParams(location.search);
+  let creds = [];
+
+  async function loadCreds() {
+    creds = await api('GET', '/wallet/credentials');
+    $('#creds').innerHTML = creds.length ? creds.map((c) => `
+      <div class="cred">
+        <div class="small">Driving licence</div>
+        <div style="font-size:18px;font-weight:700">${esc(c.name || 'Unknown holder')}</div>
+        <div class="small">Categories: ${esc(c.categories.join(', '))} · Expires ${esc(c.expiryDate)}</div>
+        <div class="small" style="margin-top:6px">Issued by: ${esc(c.issuerName)}</div>
+        <button class="small secondary" style="margin-top:10px" data-del="${esc(c.id)}">Remove</button>
+      </div>`).join('') : '<p class="hint">No credentials yet. Get one from the licence office.</p>';
+  }
+  $('#creds').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-del]');
+    if (!b) return;
+    await api('DELETE', `/wallet/credentials/${b.dataset.del}`);
+    loadCreds();
+  });
+
+  function route(link) {
+    if (link.startsWith('openid-credential-offer://')) location.search = `?offer=${encodeURIComponent(link)}`;
+    else if (link.startsWith('openid4vp://') || link.includes('request_uri=')) location.search = `?request=${encodeURIComponent(link)}`;
+  }
+  $('#pasteGo').addEventListener('click', () => route($('#paste').value.trim()));
+
+  // ---- Receive a credential ----
+  if (params.get('offer')) {
+    $('#offerCard').hidden = false;
+    $('#pin').value = params.get('pin') || '';
+    $('#acceptOffer').addEventListener('click', async () => {
+      $('#offerError').textContent = '';
+      $('#acceptOffer').disabled = true;
+      try {
+        await api('POST', '/wallet/receive', { offerUri: params.get('offer'), txCode: $('#pin').value.trim() || undefined });
+        history.replaceState(null, '', '/wallet');
+        $('#offerCard').hidden = true;
+        await loadCreds();
+      } catch (err) {
+        $('#offerError').textContent = err.message;
+      } finally {
+        $('#acceptOffer').disabled = false;
+      }
+    });
+  }
+
+  // ---- Present a credential ----
+  const requestUri = params.get('request');
+  if (requestUri) {
+    $('#requestCard').hidden = false;
+    try {
+      await loadCreds();
+      const p = await api('POST', '/wallet/preview', { requestUri });
+      $('#requestWho').innerHTML = `<b>${esc(p.verifier)}</b> <span class="hint">(${esc(p.clientId)})</span> is asking for your driving licence.`;
+      $('#requestClaims').innerHTML = p.requestedClaims.map((c) => `<span class="badge pending">${esc(c)}</span>`).join(' ');
+      const matching = creds.filter((c) => p.matchingCredentialIds.includes(c.id));
+      $('#choices').innerHTML = matching.length
+        ? matching.map((c, i) => `<label class="checks" style="margin:6px 0"><input type="radio" name="cred" value="${esc(c.id)}" ${i === 0 ? 'checked' : ''}>
+            <b>${esc(c.name)}</b> · ${esc(c.categories.join(', '))} · expires ${esc(c.expiryDate)} · <span class="hint">issued by ${esc(c.issuerName)}</span></label>`).join('')
+        : '<p class="bad-mark">You have no driving licence that matches this request.</p>';
+      $('#share').disabled = !matching.length;
+    } catch (err) {
+      $('#requestError').textContent = err.message;
+      $('#share').disabled = true;
+    }
+    $('#share').addEventListener('click', async () => {
+      $('#requestError').textContent = '';
+      $('#share').disabled = true;
+      try {
+        const credentialId = document.querySelector('input[name=cred]:checked')?.value;
+        await api('POST', '/wallet/present', { requestUri, credentialId });
+        $('#requestTitle').textContent = 'Shared. You can go back to the rental page.';
+      } catch (err) {
+        $('#requestError').textContent = err.message;
+      }
+    });
+    $('#decline').addEventListener('click', async () => {
+      try { await api('POST', '/wallet/decline', { requestUri }); } catch {}
+      $('#requestTitle').textContent = 'Declined. Nothing was shared.';
+      $('#share').disabled = true;
+      $('#decline').disabled = true;
+    });
+  } else {
+    loadCreds();
+  }
+</script>
+</body>
+</html>

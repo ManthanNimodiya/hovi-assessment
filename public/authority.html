@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Licence office · DriveProof</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top" id="nav"></header>
+<main class="wrap">
+  <h1>Demo Transport Licence Authority</h1>
+  <p class="lead">Issue digital driving licences to wallets with OpenID4VCI, and revoke or suspend them. Revocation is published
+    in a signed status list that verifiers check on every presentation.</p>
+
+  <div class="card">
+    <label for="adminKey">Admin key (from <span class="mono">ADMIN_KEY</span>, default <span class="mono">demo-admin-key</span>)</label>
+    <input type="password" id="adminKey" autocomplete="off">
+  </div>
+
+  <div class="two">
+    <form class="card" id="issueForm">
+      <h2>Issue a licence</h2>
+      <div class="row">
+        <div><label for="given_name">First name</label><input type="text" id="given_name" required></div>
+        <div><label for="family_name">Last name</label><input type="text" id="family_name" required></div>
+      </div>
+      <div class="row">
+        <div><label for="birth_date">Date of birth</label><input type="date" id="birth_date" required></div>
+        <div><label for="document_number">Licence number</label><input type="text" id="document_number" required></div>
+      </div>
+      <div class="row">
+        <div><label for="issue_date">Issued</label><input type="date" id="issue_date" required></div>
+        <div><label for="expiry_date">Expires</label><input type="date" id="expiry_date" required></div>
+      </div>
+      <label>Categories</label>
+      <div class="checks" id="categories"></div>
+      <label>Options</label>
+      <div class="checks">
+        <label><input type="checkbox" id="requirePin" checked> Require a PIN (transaction code)</label>
+        <label><input type="checkbox" id="untrusted"> Issue from the <b>unofficial</b> office (untrusted, for testing)</label>
+      </div>
+      <p class="error" id="issueError"></p>
+      <button type="submit" id="issueBtn">Issue licence</button>
+      <button type="button" class="secondary" id="randomBtn">New synthetic person</button>
+    </form>
+
+    <div class="card" id="offerCard" hidden>
+      <h2>Scan with a wallet</h2>
+      <div class="qr"><img id="offerQr" alt="Credential offer QR code"></div>
+      <p id="pinLine" style="text-align:center;font-size:18px"></p>
+      <p style="text-align:center"><a class="btn" id="openWallet" href="#">Open in demo wallet</a></p>
+      <p class="hint">Or open this link on a phone with an EUDI wallet:</p>
+      <p class="mono" id="offerUri"></p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Issued licences</h2>
+    <p class="error" id="listError"></p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Holder</th><th>Categories</th><th>Expires</th><th>Issuer</th><th>Wallet</th><th>Status</th><th></th></tr></thead>
+      <tbody id="licences"><tr><td colspan="7" class="hint">Enter the admin key to see licences.</td></tr></tbody>
+    </table></div>
+  </div>
+</main>
+<script type="module">
+  import { $, api, esc, isoDay, nav } from '/common.js';
+  $('#nav').innerHTML = nav('/authority');
+
+  const keyInput = $('#adminKey');
+  try { keyInput.value = localStorage.getItem('adminKey') || 'demo-admin-key'; } catch { keyInput.value = 'demo-admin-key'; }
+  keyInput.addEventListener('change', () => { try { localStorage.setItem('adminKey', keyInput.value); } catch {} load(); });
+  const admin = () => ({ 'x-admin-key': keyInput.value });
+
+  const meta = await api('GET', '/meta');
+  $('#categories').innerHTML = Object.entries(meta.categories)
+    .map(([code, name]) => `<label title="${esc(name)}"><input type="checkbox" value="${esc(code)}" ${code === 'B' ? 'checked' : ''}> ${esc(code)}</label>`)
+    .join('');
+
+  const FIRST = ['Aino', 'Mikko', 'Liisa', 'Juha', 'Emma', 'Oskari', 'Sofia', 'Ville'];
+  const LAST = ['Virtanen', 'Korhonen', 'Nieminen', 'Mäkinen', 'Hämäläinen', 'Laine', 'Heikkinen', 'Koskinen'];
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
+  function randomPerson() {
+    $('#given_name').value = pick(FIRST);
+    $('#family_name').value = pick(LAST);
+    $('#birth_date').value = `${1965 + Math.floor(Math.random() * 35)}-0${1 + Math.floor(Math.random() * 9)}-1${Math.floor(Math.random() * 9)}`;
+    $('#document_number').value = 'FI' + String(Math.floor(Math.random() * 1e7)).padStart(7, '0');
+    $('#issue_date').value = isoDay(-900);
+    $('#expiry_date').value = isoDay(365 * 8);
+  }
+  randomPerson();
+  $('#randomBtn').addEventListener('click', randomPerson);
+
+  $('#issueForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('#issueError').textContent = '';
+    $('#issueBtn').disabled = true;
+    try {
+      const body = {
+        given_name: $('#given_name').value, family_name: $('#family_name').value, birth_date: $('#birth_date').value,
+        document_number: $('#document_number').value, issue_date: $('#issue_date').value, expiry_date: $('#expiry_date').value,
+        categories: [...document.querySelectorAll('#categories input:checked')].map((i) => i.value),
+        requirePin: $('#requirePin').checked, untrusted: $('#untrusted').checked,
+      };
+      const r = await api('POST', '/authority/licences', body, admin());
+      $('#offerQr').src = r.offerQr;
+      $('#offerUri').textContent = r.offerUri;
+      $('#pinLine').innerHTML = r.txCode ? `PIN: <b>${esc(r.txCode)}</b>` : '<span class="hint">No PIN needed</span>';
+      $('#openWallet').href = `/wallet?offer=${encodeURIComponent(r.offerUri)}${r.txCode ? `&pin=${r.txCode}` : ''}`;
+      $('#offerCard').hidden = false;
+      load();
+    } catch (err) {
+      $('#issueError').textContent = err.message;
+    } finally {
+      $('#issueBtn').disabled = false;
+    }
+  });
+
+  async function load() {
+    $('#listError').textContent = '';
+    try {
+      const rows = await api('GET', '/authority/licences', undefined, admin());
+      $('#licences').innerHTML = rows.length ? rows.map((l) => `
+        <tr>
+          <td>${esc(l.holderName)}<div class="hint">${esc(l.documentNumber)}</div></td>
+          <td>${esc(l.categories.join(', '))}</td>
+          <td>${esc(l.expiryDate)}</td>
+          <td><span class="badge ${l.issuer === 'untrusted' ? 'untrusted' : 'valid'}">${l.issuer === 'untrusted' ? 'unofficial' : 'authority'}</span></td>
+          <td class="hint">${l.issuanceState === 'Completed' ? 'In wallet' : 'Not collected yet'}</td>
+          <td><span class="badge ${esc(l.status)}">${esc(l.status)}</span></td>
+          <td style="white-space:nowrap">
+            ${l.issuer === 'untrusted' ? '' : l.status === 'valid'
+              ? `<button class="small danger" data-id="${esc(l.id)}" data-status="revoked">Revoke</button>
+                 <button class="small secondary" data-id="${esc(l.id)}" data-status="suspended">Suspend</button>`
+              : `<button class="small secondary" data-id="${esc(l.id)}" data-status="valid">Reinstate</button>`}
+          </td>
+        </tr>`).join('') : '<tr><td colspan="7" class="hint">No licences yet.</td></tr>';
+    } catch (err) {
+      $('#listError').textContent = err.message;
+    }
+  }
+  $('#licences').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-id]');
+    if (!b) return;
+    b.disabled = true;
+    try { await api('POST', `/authority/licences/${b.dataset.id}/status`, { status: b.dataset.status }, admin()); }
+    catch (err) { $('#listError').textContent = err.message; }
+    load();
+  });
+  load();
+  setInterval(load, 5000);
+</script>
+</body>
+</html>

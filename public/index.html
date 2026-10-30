@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DriveProof: digital driving licence for car rental</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top" id="nav"></header>
+<main class="wrap">
+  <h1>Rent a car with your digital driving licence</h1>
+  <p class="lead">A prototype with three parties: a <b>licence authority</b> issues a digital driving licence to the customer's
+    wallet (OpenID4VCI). A <b>car rental company</b> asks the wallet for only the licence details it needs (OpenID4VP),
+    checks them, and decides whether the customer may drive the chosen vehicle for the whole rental period. All data is synthetic.</p>
+
+  <div class="grid">
+    <div class="card"><h2>1. Licence office</h2><p class="hint">Issue a driving licence to a wallet, and revoke it later.</p><a class="btn" href="/authority">Open licence office</a></div>
+    <div class="card"><h2>2. Car rental</h2><p class="hint">Pick a vehicle and dates, share your licence, see the decision.</p><a class="btn" href="/rent">Rent a car</a></div>
+    <div class="card"><h2>3. Wallet</h2><p class="hint">Use the built-in demo wallet, or any EUDI-compatible wallet app that supports SD-JWT VC.</p><a class="btn secondary" href="/wallet">Open demo wallet</a></div>
+  </div>
+
+  <div class="card">
+    <h2>Try the whole flow in 2 minutes</h2>
+    <ol class="steps">
+      <li><b>Licence office:</b> issue a licence (the form is pre-filled with a synthetic person) and click <i>Open in demo wallet</i>.</li>
+      <li><b>Demo wallet:</b> enter the PIN shown by the office and receive the licence.</li>
+      <li><b>Car rental:</b> pick a vehicle and dates, then click <i>Open in demo wallet</i> and share.</li>
+      <li>See the decision with every check explained. Then revoke the licence in the office and try again: it's rejected.</li>
+    </ol>
+    <p class="hint">Also try: a motorcycle with a car-only licence, a licence that expires during the rental, a driver under 21 for the Tesla, or a licence from the <i>unofficial</i> (untrusted) office.</p>
+  </div>
+</main>
+<script type="module">
+  import { nav } from '/common.js';
+  document.getElementById('nav').innerHTML = nav('/');
+</script>
+</body>
+</html>

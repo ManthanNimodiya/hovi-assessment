@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Car rental · DriveProof</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top" id="nav"></header>
+<main class="wrap">
+  <h1>DriveProof Car Rental</h1>
+  <p class="lead">Choose a vehicle and dates. We'll ask your wallet for your driving licence and check that it lets you drive this
+    vehicle for the whole rental. We only ask for what we need: your name, licence categories, expiry date and whether you're over 18/21.</p>
+
+  <section id="step1">
+    <div class="card">
+      <h2>1. Choose a vehicle</h2>
+      <div class="grid" id="vehicles"></div>
+    </div>
+    <div class="card">
+      <h2>2. Choose dates</h2>
+      <div class="row">
+        <div><label for="startDate">Pick-up</label><input type="date" id="startDate"></div>
+        <div><label for="endDate">Return</label><input type="date" id="endDate"></div>
+      </div>
+      <p class="error" id="rentError"></p>
+      <button id="continueBtn">Continue: verify my licence</button>
+    </div>
+  </section>
+
+  <section id="step2" hidden>
+    <div class="two">
+      <div class="card">
+        <h2>3. Share your licence</h2>
+        <p id="summary"></p>
+        <p class="hint">You'll be asked to share: <b>name, licence categories, expiry date, age over 18, age over 21</b>.
+          Your date of birth, address and licence number are <b>not</b> requested.</p>
+        <p><a class="btn" id="openWallet" href="#" target="_blank" rel="noopener">Open in demo wallet</a></p>
+        <p class="hint">Or scan the QR code with an EUDI wallet. On a phone, tap the link below.</p>
+        <p class="mono" id="requestUri"></p>
+        <p class="hint" id="waiting">Waiting for your wallet…</p>
+      </div>
+      <div class="card qr"><img id="requestQr" alt="Presentation request QR code"></div>
+    </div>
+  </section>
+
+  <section id="step3" hidden>
+    <div class="result" id="result"></div>
+    <p style="margin-top:16px"><button class="secondary" id="againBtn">Start a new rental</button></p>
+  </section>
+</main>
+<script type="module">
+  import { $, api, esc, isoDay, nav } from '/common.js';
+  $('#nav').innerHTML = nav('/rent');
+
+  const { vehicles, categories } = await api('GET', '/meta');
+  let selected = vehicles[0].id;
+  function drawVehicles() {
+    $('#vehicles').innerHTML = vehicles.map((v) => `
+      <div class="vehicle ${v.id === selected ? 'selected' : ''}" data-id="${esc(v.id)}" tabindex="0" role="button" aria-pressed="${v.id === selected}">
+        <div class="emoji">${v.image}</div>
+        <div class="name">${esc(v.name)}</div>
+        <div class="meta">${esc(v.kind)} · €${v.pricePerDay}/day</div>
+        <div class="meta">Needs category <b>${esc(v.category)}</b>, driver ${v.minAge}+</div>
+      </div>`).join('');
+  }
+  drawVehicles();
+  $('#vehicles').addEventListener('click', (e) => {
+    const card = e.target.closest('.vehicle');
+    if (card) { selected = card.dataset.id; drawVehicles(); }
+  });
+  $('#vehicles').addEventListener('keydown', (e) => {
+    const card = e.target.closest('.vehicle');
+    if (card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selected = card.dataset.id; drawVehicles(); }
+  });
+  $('#startDate').value = isoDay(1);
+  $('#endDate').value = isoDay(4);
+  $('#startDate').min = isoDay(0);
+
+  let poll;
+  $('#continueBtn').addEventListener('click', async () => {
+    $('#rentError').textContent = '';
+    try {
+      const r = await api('POST', '/rentals', { vehicleId: selected, startDate: $('#startDate').value, endDate: $('#endDate').value });
+      const v = vehicles.find((x) => x.id === selected);
+      $('#summary').innerHTML = `<b>${esc(v.name)}</b>, ${esc(r.rental.startDate)} → ${esc(r.rental.endDate)}`;
+      $('#requestQr').src = r.requestQr;
+      $('#requestUri').textContent = r.requestUri;
+      $('#openWallet').href = `/wallet?request=${encodeURIComponent(r.requestUri)}`;
+      $('#step1').hidden = true;
+      $('#step2').hidden = false;
+      poll = setInterval(() => check(r.rental.id), 2000);
+    } catch (err) {
+      $('#rentError').textContent = err.message;
+    }
+  });
+
+  async function check(id) {
+    const r = await api('GET', `/rentals/${id}`).catch(() => null);
+    if (!r || r.decision === 'pending') return;
+    clearInterval(poll);
+    const ok = r.decision === 'approved';
+    $('#result').className = `result ${r.decision}`;
+    $('#result').innerHTML = `
+      <h2>${ok ? '✅ You can rent this vehicle' : r.decision === 'expired' ? '⌛ Request expired' : '❌ We can\'t approve this rental'}</h2>
+      <p>${esc(r.reason || '')}</p>
+      ${ok && r.driverName ? `<p>Driver on the contract: <b>${esc(r.driverName)}</b></p>` : ''}
+      ${r.checks ? `<ul class="checklist">${r.checks.map((c) => `<li><span class="${c.ok ? 'ok-mark' : 'bad-mark'}">${c.ok ? '✓' : '✗'}</span> <b>${esc(c.name)}</b>: ${esc(c.detail)}</li>`).join('')}</ul>`
+        : '<p class="hint">The credential itself failed verification (trust, signature, holder binding or revocation), so no business checks were run.</p>'}
+      <p class="hint">We keep only this decision and the driver's name. The shared licence data is deleted after the check.</p>`;
+    $('#step2').hidden = true;
+    $('#step3').hidden = false;
+  }
+  $('#againBtn').addEventListener('click', () => location.reload());
+</script>
+</body>
+</html>
