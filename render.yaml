@@ -1,0 +1,14 @@
+# Render Blueprint: New → Blueprint → select this repo. Deploys the Dockerfile on the free plan.
+services:
+  - type: web
+    name: driveproof
+    runtime: docker
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health
+    envVars:
+      - key: ADMIN_KEY
+        value: demo-admin-key
+      - key: STORE_KEY
+        value: driveproof-test-store-key
+      # BASE_URL defaults to RENDER_EXTERNAL_URL (set by Render). DATABASE_URL is optional (Postgres).

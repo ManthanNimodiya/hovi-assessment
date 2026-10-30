@@ -4,7 +4,8 @@ const port = Number(process.env.PORT ?? 3000);
 export const config = {
   port,
   // Public URL of this service. Wallets on phones must be able to reach it (HTTPS in production).
-  baseUrl: (process.env.BASE_URL ?? `http://localhost:${port}`).replace(/\/$/, ''),
+  // On Render, RENDER_EXTERNAL_URL is set automatically to the service's https URL.
+  baseUrl: (process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`).replace(/\/$/, ''),
   // Protects the licence authority's admin actions (issue, revoke). Test value only.
   adminKey: process.env.ADMIN_KEY ?? 'demo-admin-key',
   // Askar storage. Defaults to SQLite files in ./data. Set DATABASE_URL (postgres://user:pass@host:port/db) for Postgres.

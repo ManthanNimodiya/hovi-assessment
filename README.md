@@ -112,11 +112,16 @@ npm run e2e               # in a second terminal: runs all scenarios
 | `STORE_KEY` | `driveproof-test-store-key` | Encryption key for the Askar stores. Test value |
 | `DATABASE_URL` | *(empty → SQLite in `./data`)* | `postgres://user:password@host:5432/db` to use Postgres |
 
-### Deploy (Koyeb)
+### Deploy (Render)
 
-1. Create a **Web Service** from this GitHub repo, builder **Dockerfile**, port **3000**.
-2. Optional: create a **Koyeb Postgres** database and set `DATABASE_URL`.
-3. Set `BASE_URL` to the service's public URL (e.g. `https://<service>-<org>.koyeb.app`), plus `ADMIN_KEY` and `STORE_KEY`.
+The repo includes a `render.yaml` blueprint: **Render → New → Blueprint → select this repo**. It builds the `Dockerfile` on the
+free plan with a `/health` check. `BASE_URL` is taken automatically from Render's `RENDER_EXTERNAL_URL` (HTTPS).
+Optionally set `DATABASE_URL` to a Postgres database (tested locally with Postgres 16: Askar creates one database per organisation).
+
+> The free plan sleeps after 15 minutes without traffic; the first request then takes about a minute while the service wakes up.
+> Without `DATABASE_URL` the data lives in SQLite inside the container and resets on redeploy, which is fine for a demo.
+
+Koyeb works the same way (Dockerfile builder, port from `PORT`, set `BASE_URL` to the service URL).
 
 ## Tested scenarios (`npm run e2e`)
 
