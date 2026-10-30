@@ -114,6 +114,8 @@ npm run e2e               # in a second terminal: runs all scenarios
 
 ### Deploy (Render)
 
+**Deployed at:** https://driveproof-u5z6.onrender.com
+
 The repo includes a `render.yaml` blueprint: **Render → New → Blueprint → select this repo**. It builds the `Dockerfile` on the
 free plan with a `/health` check. `BASE_URL` is taken automatically from Render's `RENDER_EXTERNAL_URL` (HTTPS).
 Optionally set `DATABASE_URL` to a Postgres database (tested locally with Postgres 16: Askar creates one database per organisation).
