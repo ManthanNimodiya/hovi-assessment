@@ -4,7 +4,7 @@ A working prototype where a customer gets a **digital driving licence** in their
 vehicle they want to rent, **for the whole rental period**. Built with **Credo-TS 0.7**, **OpenID4VCI** (issuance) and
 **OpenID4VP + DCQL** (presentation), **SD-JWT VC** credentials, **X.509 trust anchors** and **IETF Token Status List** revocation.
 
-- **Live demo:** _DEPLOYED_URL_
+- **Live demo:** https://driveproof-u5z6.onrender.com
 - **Try it in 2 minutes:** Licence office → issue → *Open in demo wallet* → enter PIN → Car rental → pick a vehicle and dates → *Open in demo wallet* → Share → see the decision.
 
 All data is synthetic and every key, certificate and secret is a test value.
