@@ -4,6 +4,7 @@ import { OpenId4VcVerificationSessionState, type Agent, type DcqlQuery } from '.
 import { pki, VERIFIER_ID } from './agents.ts';
 import { InputError } from './authority.ts';
 import { checkEligibility, LICENCE_VCT, RENTAL_REQUESTED_CLAIMS, VEHICLES, type Check } from './licence.ts';
+import { daysFromToday, isRealDate, today } from './dates.ts';
 
 export type RentalDecision = 'pending' | 'approved' | 'rejected' | 'expired';
 
@@ -22,8 +23,8 @@ export type RentalRecord = {
   decidedAt?: string;
 };
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_DAYS = 30;
+const MAX_DAYS_AHEAD = 365;
 
 const licenceQuery: DcqlQuery = {
   credentials: [
@@ -41,9 +42,9 @@ export async function createRental(agent: Agent, body: { vehicleId?: string; sta
   const vehicle = VEHICLES.find((v) => v.id === body.vehicleId);
   if (!vehicle) throw new InputError('Choose a vehicle');
   const { startDate, endDate } = body;
-  if (!startDate || !endDate || !DATE.test(startDate) || !DATE.test(endDate)) throw new InputError('Choose start and end dates');
-  const today = new Date().toISOString().slice(0, 10);
-  if (startDate < today) throw new InputError('The rental cannot start in the past');
+  if (!isRealDate(startDate) || !isRealDate(endDate)) throw new InputError('Choose real start and end dates');
+  if (startDate < today()) throw new InputError('The rental cannot start in the past');
+  if (startDate > daysFromToday(MAX_DAYS_AHEAD)) throw new InputError(`Bookings open at most ${MAX_DAYS_AHEAD} days ahead`);
   if (endDate < startDate) throw new InputError('The end date must be on or after the start date');
   const days = (Date.parse(endDate) - Date.parse(startDate)) / 86_400_000 + 1;
   if (days > MAX_DAYS) throw new InputError(`Rentals are limited to ${MAX_DAYS} days`);

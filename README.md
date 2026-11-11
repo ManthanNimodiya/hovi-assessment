@@ -137,6 +137,8 @@ Koyeb works the same way (Dockerfile builder, port from `PORT`, set `BASE_URL` t
 | Licence from the untrusted office | ❌ not issued by a trusted authority |
 | Revoke → present again | ❌ revoked; reinstate → ✅ approved |
 | Issuing an already-expired licence | refused (400) |
+| Nonsense dates: issued in the future, 31 February, birth date in the future, B licence for a 12-year-old, valid until 9999 | refused (400) |
+| Rental with an impossible date or more than a year ahead | refused (400) |
 | Customer declines in the wallet | ❌ declined (OpenID4VP `access_denied`) |
 
 ## Assumptions and design decisions
