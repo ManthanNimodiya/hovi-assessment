@@ -2,7 +2,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Agent } from './credo.ts';
 import { TRUSTED_ISSUER_ID, UNTRUSTED_ISSUER_ID } from './agents.ts';
-import { CATEGORIES, LICENCE_CONFIG_ID, licenceClaims, type LicenceInput } from './licence.ts';
+import { CATEGORIES, CATEGORY_MIN_AGE, LICENCE_CONFIG_ID, MAX_VALIDITY_YEARS, licenceClaims, type LicenceInput } from './licence.ts';
+import { addYears, isRealDate, today } from './dates.ts';
 import { allocateIndex, setStatus, type StatusName } from './statusList.ts';
 
 export type LicenceRecord = {
@@ -18,8 +19,6 @@ export type LicenceRecord = {
   createdAt: string;
 };
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-
 export class InputError extends Error {}
 
 function validate(input: Partial<LicenceInput>): LicenceInput {
@@ -29,7 +28,7 @@ function validate(input: Partial<LicenceInput>): LicenceInput {
   };
   const date = (v: unknown, name: string) => {
     const d = s(v, name);
-    if (!DATE.test(d) || Number.isNaN(Date.parse(d))) throw new InputError(`${name} must be YYYY-MM-DD`);
+    if (!isRealDate(d)) throw new InputError(`${name} must be a real date (YYYY-MM-DD)`);
     return d;
   };
   const categories = Array.isArray(input.categories) ? input.categories.filter((c) => typeof c === 'string' && c in CATEGORIES) : [];
@@ -43,8 +42,19 @@ function validate(input: Partial<LicenceInput>): LicenceInput {
     expiry_date: date(input.expiry_date, 'expiry_date'),
     categories: [...new Set(categories)],
   };
+  // The dates must make sense together, not just be well-formed.
+  const now = today();
+  if (licence.birth_date < '1900-01-01' || licence.birth_date >= now) throw new InputError('birth_date must be in the past');
+  if (licence.issue_date > now) throw new InputError('issue_date cannot be in the future');
+  const minAge = Math.max(...licence.categories.map((c) => CATEGORY_MIN_AGE[c] ?? 18));
+  if (licence.issue_date < addYears(licence.birth_date, minAge)) {
+    throw new InputError(`The holder must be at least ${minAge} on issue_date for these categories`);
+  }
   if (licence.expiry_date <= licence.issue_date) throw new InputError('expiry_date must be after issue_date');
-  if (licence.expiry_date < new Date().toISOString().slice(0, 10)) throw new InputError('This licence has already expired');
+  if (licence.expiry_date > addYears(licence.issue_date, MAX_VALIDITY_YEARS)) {
+    throw new InputError(`A licence can be valid for at most ${MAX_VALIDITY_YEARS} years`);
+  }
+  if (licence.expiry_date < now) throw new InputError('This licence has already expired');
   return licence;
 }
 

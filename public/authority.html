@@ -88,6 +88,10 @@
     $('#issue_date').value = isoDay(-900);
     $('#expiry_date').value = isoDay(365 * 8);
   }
+  // The date pickers block impossible dates; the server checks them again.
+  $('#birth_date').max = isoDay(-1);
+  $('#issue_date').max = isoDay(0);
+  $('#expiry_date').min = isoDay(0);
   randomPerson();
   $('#randomBtn').addEventListener('click', randomPerson);
 
