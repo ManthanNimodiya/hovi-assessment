@@ -20,12 +20,14 @@ const person = { given_name: 'Mikko', family_name: 'Testinen', birth_date: '1990
 
 async function issueAndReceive(extra: Record<string, unknown>) {
   const issued = await call('POST', '/authority/licences', { ...person, expiry_date: day(3650), categories: ['B'], requirePin: true, ...extra }, ADMIN);
-  const [credential] = await call('POST', '/wallet/receive', { offerUri: issued.offerUri, txCode: issued.txCode });
-  return { licenceId: issued.licence.id as string, credentialId: credential.id as string };
+  // One offer gives the wallet both formats of the same licence.
+  const credentials: { id: string; format: string }[] = await call('POST', '/wallet/receive', { offerUri: issued.offerUri, txCode: issued.txCode });
+  const byFormat = (prefix: string) => credentials.find((c) => c.format.startsWith(prefix))!.id;
+  return { licenceId: issued.licence.id as string, credentialId: byFormat('SD-JWT'), mdocId: byFormat('mdoc') };
 }
 
-async function rent(vehicleId: string, credentialId: string, endOffset = 5) {
-  const { rental, requestUri } = await call('POST', '/rentals', { vehicleId, startDate: day(1), endDate: day(endOffset) });
+async function rent(vehicleId: string, credentialId: string, endOffset = 5, format: 'sd-jwt' | 'mdoc' = 'sd-jwt') {
+  const { rental, requestUri } = await call('POST', '/rentals', { vehicleId, format, startDate: day(1), endDate: day(endOffset) });
   await call('POST', '/wallet/present', { requestUri, credentialId }).catch(() => undefined); // wallet may get an error back
   return call('GET', `/rentals/${rental.id}`);
 }
@@ -65,6 +67,25 @@ expect('after reinstatement', 'approved', await rent('golf', revoked.credentialI
   await call('POST', '/wallet/decline', { requestUri });
   expect('customer declines in the wallet', 'rejected', await call('GET', `/rentals/${rental.id}`));
 }
+
+// ---------- The same licence as an ISO 18013-5 mDL (mdoc) ----------
+console.log('\nmdoc (ISO 18013-5 mDL):');
+const rentMdl = (vehicleId: string, mdocId: string, endOffset = 5) => rent(vehicleId, mdocId, endOffset, 'mdoc');
+expect('mDL: valid B licence, renting a car', 'approved', await rentMdl('golf', valid.mdocId));
+expect('mDL: same licence, renting a motorcycle (needs A)', 'rejected', await rentMdl('mt07', valid.mdocId));
+expect('mDL: licence expiring during the rental', 'rejected', await rentMdl('golf', expiring.mdocId, 5));
+expect('mDL: 20-year-old renting a Tesla (needs 21+)', 'rejected', await rentMdl('model3', young.mdocId));
+expect('mDL: licence from an untrusted issuer', 'rejected', await rentMdl('golf', untrusted.mdocId));
+{
+  const licence = await issueAndReceive({});
+  expect('mDL: before revocation', 'approved', await rentMdl('golf', licence.mdocId));
+  await call('POST', `/authority/licences/${licence.licenceId}/status`, { status: 'revoked' }, ADMIN);
+  expect('mDL: after revocation (CWT status list)', 'rejected', await rentMdl('golf', licence.mdocId));
+  expect('SD-JWT copy of the same licence is revoked too', 'rejected', await rent('golf', licence.credentialId));
+  await call('POST', `/authority/licences/${licence.licenceId}/status`, { status: 'valid' }, ADMIN);
+  expect('mDL: after reinstatement', 'approved', await rentMdl('golf', licence.mdocId));
+}
+console.log('');
 
 try {
   await call('POST', '/authority/licences', { ...person, issue_date: '2010-01-01', expiry_date: '2020-01-01', categories: ['B'] }, ADMIN);

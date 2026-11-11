@@ -2,7 +2,8 @@
 
 A working prototype where a customer gets a **digital driving licence** in their wallet and uses it to prove they may drive the
 vehicle they want to rent, **for the whole rental period**. Built with **Credo-TS 0.7**, **OpenID4VCI** (issuance) and
-**OpenID4VP + DCQL** (presentation), **SD-JWT VC** credentials, **X.509 trust anchors** and **IETF Token Status List** revocation.
+**OpenID4VP + DCQL** (presentation), in **two credential formats** (**SD-JWT VC** and the **ISO 18013-5 mDL / mdoc**),
+**X.509 trust anchors** and **IETF Token Status List** revocation.
 
 - **Live demo:** https://driveproof-u5z6.onrender.com
 - **Try it in 2 minutes:** Licence office → issue → *Open in demo wallet* → enter PIN → Car rental → pick a vehicle and dates → *Open in demo wallet* → Share → see the decision.
@@ -59,10 +60,17 @@ flowchart LR
 - **PKI:** a demo **trust anchor (CA)** signs the Licence Authority's certificate. The rental company trusts **only the trust anchor**
   (`verifierAgent.x509.config.setTrustedCertificates`). The unofficial office has a self-signed certificate, so it's rejected.
   The rental company signs its OpenID4VP requests with its own certificate (`x509_san_dns` client id).
-- **Credential:** SD-JWT VC (`dc+sd-jwt`), claims modelled on the ISO 18013-5 / EUDI mobile driving licence data set
-  (`driving_privileges`, `expiry_date`, `age_over_18/21/25`, …). **Every claim is selectively disclosable.**
+- **Credential, in two formats from one offer:**
+  - **SD-JWT VC** (`dc+sd-jwt`): JSON, easy to inspect, good for online flows.
+  - **mDL / mdoc** (`mso_mdoc`, doctype `org.iso.18013.5.1.mDL`, namespace `org.iso.18013.5.1`): CBOR signed with COSE,
+    the ISO format made for driving licences, also usable in person (QR/NFC/BLE).
+  Both carry the same claims from the ISO 18013-5 data set (`driving_privileges`, `expiry_date`, `age_over_18/21/25`, …),
+  are signed by the same certificate and point to the same status index. **Every claim is selectively disclosable** in both.
+  The rental page lets you choose which format to ask for; the business rules are the same.
 - **Revocation:** Credo's `TokenStatusList` API (2 bits per credential: valid / revoked / suspended), signed with the issuer's
-  certificate and served at `/status-lists/1`. Status changes are serialised so two revocations can't overwrite each other.
+  certificate. Served twice with the same values: as a **JWT** at `/status-lists/1` (SD-JWT VC) and as a **CWT** at
+  `/status-lists/1/cwt` (mdoc, as ISO 18013-5 § 12.3.6 requires, with an expiry and re-signed before it runs out).
+  Revoking a licence revokes both formats. Status changes are serialised so two revocations can't overwrite each other.
 
 ### Data minimisation
 
@@ -78,9 +86,10 @@ flowchart LR
 src/
   index.ts       Express server: API routes, status list endpoint, static UI
   agents.ts      The three Credo agents, PKI (trust anchor + certificates), credential mapper
-  licence.ts     Credential configuration, claims, vehicles, eligibility rules
+  licence.ts     Credential configurations (SD-JWT VC + mDL), claims, vehicles, eligibility rules
+  mdocClaims.ts  Turns mdoc (CBOR) claims into plain JSON
   authority.ts   Issue licences (createCredentialOffer), list, revoke / suspend / reinstate
-  statusList.ts  Token status list: create, allocate index, update status (serialised)
+  statusList.ts  Token status list as JWT + CWT: create, allocate index, update status (serialised)
   rental.ts      Create OpenID4VP request (DCQL), read verified response, apply rules, store decision
   wallet.ts      Demo wallet: receive (OpenID4VCI), preview / present / decline (OpenID4VP)
   config.ts      Environment configuration
@@ -138,11 +147,17 @@ Koyeb works the same way (Dockerfile builder, port from `PORT`, set `BASE_URL` t
 | Revoke → present again | ❌ revoked; reinstate → ✅ approved |
 | Issuing an already-expired licence | refused (400) |
 | Customer declines in the wallet | ❌ declined (OpenID4VP `access_denied`) |
+| **mDL (mdoc):** valid licence / wrong category / expiring / too young / untrusted issuer | ✅ / ❌ / ❌ / ❌ / ❌ |
+| **mDL:** revoke → present again (CWT status list), SD-JWT copy revoked too; reinstate | ❌ revoked; ✅ approved |
 
 ## Assumptions and design decisions
 
-- **SD-JWT VC over mdoc:** easier to inspect and debug in an 8-hour prototype, supported by Credo end to end and by EUDI wallets.
-  The design maps directly to mdoc (`org.iso.18013.5.1.mDL`) because the claims follow the same data set.
+- **SD-JWT VC first, mdoc added after:** the 8-hour version used SD-JWT VC because it is easier to inspect and debug.
+  For a driving licence the ISO mDL is the natural format, so it was added next to it: the same claims, certificate,
+  status index and business rules, so `checkEligibility` didn't change.
+- **Credo 0.7.4 note (CWT status lists):** Credo bundles two versions of `@owf/cose`; the mdoc one registers its own COSE tag
+  decoder, so `updateTokenStatusList({ format: 'cwt' })` can't read a token Credo just created. DriveProof therefore never
+  decodes the CWT: it rebuilds it from the JWT list (the single source of truth) on every change.
 - **Pre-authorized code + PIN:** the licence office has already identified the person at the counter, so the wallet gets a code plus
   a PIN shown separately. A real authority would use the authorization code flow with eID login.
 - **One service, three agents:** fastest to deploy and demo. Separate stores keep the trust boundaries realistic.
@@ -152,7 +167,7 @@ Koyeb works the same way (Dockerfile builder, port from `PORT`, set `BASE_URL` t
 
 ## Not done / next steps
 
-- mdoc (ISO 18013-5) format and proximity (NFC/BLE) presentation for pick-up at the counter.
+- Proximity (NFC/BLE) presentation of the mDL for pick-up at the counter; a portrait in the mDL (required by ISO 18013-5).
 - Real wallet testing beyond the demo wallet (the deployed HTTPS URL is required for phone wallets).
 - Staff authentication, audit log, rate limiting, key storage in an HSM/KMS.
 - Payment and booking: the prototype stops at the eligibility decision.

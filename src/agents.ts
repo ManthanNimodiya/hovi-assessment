@@ -21,12 +21,13 @@ import {
   type OpenId4VciCredentialRequestToCredentialMapper,
 } from './credo.ts';
 import { config, hostname } from './config.ts';
-import { credentialConfigurationsSupported, DISCLOSABLE, LICENCE_CONFIG_ID } from './licence.ts';
+import { credentialConfigurationsSupported, DISCLOSABLE, LICENCE_CONFIG_ID, MDL_CONFIG_ID, MDL_DOCTYPE, mdlNamespaces, type licenceClaims } from './licence.ts';
 
 export const TRUSTED_ISSUER_ID = 'licence-authority';
 export const UNTRUSTED_ISSUER_ID = 'unofficial-licence-office';
 export const VERIFIER_ID = 'car-rental';
 export const STATUS_LIST_URI = `${config.baseUrl}/status-lists/1`;
+export const MDOC_STATUS_LIST_URI = `${config.baseUrl}/status-lists/1/cwt`;
 
 function askar(name: string) {
   let database;
@@ -162,10 +163,28 @@ const credentialMapper: OpenId4VciCredentialRequestToCredentialMapper = async ({
   credentialConfigurationId,
   issuanceSession,
 }) => {
-  if (credentialConfigurationId !== LICENCE_CONFIG_ID) throw new Error(`Unsupported credential ${credentialConfigurationId}`);
-  const meta = issuanceSession.issuanceMetadata as { claims: Record<string, unknown>; statusIndex: number; expiresAt: number };
+  const meta = issuanceSession.issuanceMetadata as { claims: ReturnType<typeof licenceClaims>; statusIndex: number; expiresAt: number };
   const untrusted = issuanceSession.issuerId === UNTRUSTED_ISSUER_ID;
   const cert = untrusted ? pki.unofficial : pki.authority;
+
+  // The same licence as an ISO 18013-5 mDL (mdoc): CBOR claims, signed with COSE by the same certificate.
+  if (credentialConfigurationId === MDL_CONFIG_ID) {
+    return {
+      type: 'credentials',
+      format: ClaimFormat.MsoMdoc,
+      credentials: holderBinding.keys.map((binding) => ({
+        docType: MDL_DOCTYPE,
+        namespaces: mdlNamespaces(meta.claims),
+        validityInfo: { validUntil: new Date(meta.expiresAt * 1000) },
+        issuerCertificate: cert,
+        holderKey: binding.jwk, // device key: the wallet signs each presentation with it (like cnf in SD-JWT)
+        // Revocation: same index as the SD-JWT copy, in the CWT version of the status list.
+        ...(untrusted ? {} : { statusInfo: { index: meta.statusIndex, uri: MDOC_STATUS_LIST_URI } }),
+      })),
+    };
+  }
+
+  if (credentialConfigurationId !== LICENCE_CONFIG_ID) throw new Error(`Unsupported credential ${credentialConfigurationId}`);
 
   return {
     type: 'credentials',

@@ -2,10 +2,13 @@
 import {
   ClaimFormat,
   Kms,
+  MdocRecord,
   SdJwtVcRecord,
   preAuthorizedCodeGrantIdentifier,
   type Agent,
 } from './credo.ts';
+import { MDL_NAMESPACE } from './licence.ts';
+import { plainClaims } from './mdocClaims.ts';
 
 export async function receiveCredential(agent: Agent, offerUri: string, txCode?: string) {
   const offer = await agent.openid4vc.holder.resolveCredentialOffer(offerUri);
@@ -25,10 +28,29 @@ export async function receiveCredential(agent: Agent, offerUri: string, txCode?:
 
   const stored = [];
   for (const c of response.credentials) {
-    if (!(c.record instanceof SdJwtVcRecord)) continue;
-    stored.push(await agent.sdJwtVc.store({ record: c.record }));
+    if (c.record instanceof SdJwtVcRecord) stored.push(summarise(await agent.sdJwtVc.store({ record: c.record })));
+    else if (c.record instanceof MdocRecord) stored.push(summariseMdoc(await agent.mdoc.store({ record: c.record })));
   }
-  return stored.map(summarise);
+  return stored;
+}
+
+function summariseMdoc(record: MdocRecord) {
+  const mdoc = record.firstCredential;
+  const claims = plainClaims(mdoc.issuerSignedNamespaces[MDL_NAMESPACE] ?? {}) as Record<string, unknown>;
+  return {
+    id: record.id,
+    format: 'mdoc (ISO 18013-5 mDL)',
+    vct: mdoc.docType,
+    name: `${claims.given_name ?? ''} ${claims.family_name ?? ''}`.trim(),
+    categories: Array.isArray(claims.driving_privileges)
+      ? (claims.driving_privileges as { vehicle_category_code: string }[]).map((p) => p.vehicle_category_code)
+      : [],
+    expiryDate: claims.expiry_date,
+    issuer: '',
+    issuerName: String(claims.issuing_authority ?? 'Unknown issuer'),
+    signedByCertificate: 'yes',
+    claims,
+  };
 }
 
 function summarise(record: SdJwtVcRecord) {
@@ -37,6 +59,7 @@ function summarise(record: SdJwtVcRecord) {
   const header = sdJwt.header as { x5c?: string[] };
   return {
     id: record.id,
+    format: 'SD-JWT VC',
     vct: claims.vct,
     name: `${claims.given_name ?? ''} ${claims.family_name ?? ''}`.trim(),
     categories: Array.isArray(claims.driving_privileges)
@@ -53,12 +76,14 @@ function summarise(record: SdJwtVcRecord) {
 }
 
 export async function listCredentials(agent: Agent) {
-  const records = await agent.sdJwtVc.getAll();
-  return records.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).map(summarise);
+  const sdJwts = (await agent.sdJwtVc.getAll()).map((r) => ({ createdAt: r.createdAt, summary: summarise(r) }));
+  const mdocs = (await agent.mdoc.getAll()).map((r) => ({ createdAt: r.createdAt, summary: summariseMdoc(r) }));
+  return [...sdJwts, ...mdocs].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).map((c) => c.summary);
 }
 
 export async function deleteCredential(agent: Agent, id: string) {
-  await agent.sdJwtVc.deleteById(id);
+  if (await agent.mdoc.getById(id).catch(() => null)) await agent.mdoc.deleteById(id);
+  else await agent.sdJwtVc.deleteById(id);
 }
 
 /** Read a presentation request and show what the verifier wants and which credentials match. */
@@ -69,7 +94,7 @@ export async function previewRequest(agent: Agent, requestUri: string) {
   const matches = query?.credential_matches.driving_licence;
   const matchingIds =
     matches && matches.success
-      ? (matches.valid_credentials ?? []).map((vc: { record: unknown }) => (vc.record as SdJwtVcRecord).id)
+      ? (matches.valid_credentials ?? []).map((vc: { record: unknown }) => (vc.record as { id: string }).id)
       : [];
   const payload = resolved.authorizationRequestPayload as { client_id?: string; client_metadata?: { client_name?: string } };
   return {
@@ -90,7 +115,7 @@ export async function presentCredential(agent: Agent, requestUri: string, creden
   if (credentialId) {
     const match = queryResult.credential_matches.driving_licence;
     if (match?.success && match.valid_credentials) {
-      const chosen = match.valid_credentials.filter((vc: { record: unknown }) => (vc.record as SdJwtVcRecord).id === credentialId);
+      const chosen = match.valid_credentials.filter((vc: { record: unknown }) => (vc.record as { id: string }).id === credentialId);
       if (!chosen.length) throw new Error('That credential does not match this request');
       match.valid_credentials = chosen as typeof match.valid_credentials;
     }

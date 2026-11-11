@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Agent } from './credo.ts';
 import { TRUSTED_ISSUER_ID, UNTRUSTED_ISSUER_ID } from './agents.ts';
-import { CATEGORIES, LICENCE_CONFIG_ID, licenceClaims, type LicenceInput } from './licence.ts';
+import { CATEGORIES, LICENCE_CONFIG_ID, MDL_CONFIG_ID, licenceClaims, type LicenceInput } from './licence.ts';
 import { allocateIndex, setStatus, type StatusName } from './statusList.ts';
 
 export type LicenceRecord = {
@@ -60,7 +60,8 @@ export async function issueLicence(
 
   const { credentialOffer, issuanceSession } = await agent.openid4vc.issuer.createCredentialOffer({
     issuerId,
-    credentialConfigurationIds: [LICENCE_CONFIG_ID],
+    // One offer, two formats of the same licence: SD-JWT VC and ISO 18013-5 mDL (mdoc).
+    credentialConfigurationIds: [LICENCE_CONFIG_ID, MDL_CONFIG_ID],
     preAuthorizedCodeFlowConfig: {
       txCode: options.requirePin ? { input_mode: 'numeric', length: 4, description: 'PIN shown on the licence office screen' } : undefined,
     },

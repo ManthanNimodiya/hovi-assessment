@@ -1,9 +1,14 @@
 // The digital driving licence: credential definition, claims, and the rental eligibility rules.
-import { Kms, OpenId4VciCredentialFormatProfile, type OpenId4VciCredentialConfigurationsSupportedWithFormats } from './credo.ts';
+import { DateOnly, Kms, OpenId4VciCredentialFormatProfile, type OpenId4VciCredentialConfigurationsSupportedWithFormats } from './credo.ts';
 import { config } from './config.ts';
 
 export const LICENCE_CONFIG_ID = 'DrivingLicence-sdjwt';
 export const LICENCE_VCT = `${config.baseUrl}/vct/driving-licence`;
+
+// The same licence as an ISO 18013-5 mobile driving licence (mDL): CBOR data signed with COSE (mdoc format).
+export const MDL_CONFIG_ID = 'DrivingLicence-mdoc';
+export const MDL_DOCTYPE = 'org.iso.18013.5.1.mDL';
+export const MDL_NAMESPACE = 'org.iso.18013.5.1';
 
 /** Licence categories (EU driving licence categories, simplified). */
 export const CATEGORIES: Record<string, string> = {
@@ -28,6 +33,19 @@ export const credentialConfigurationsSupported = {
     },
     credential_metadata: {
       display: [{ name: 'Driving Licence', locale: 'en', background_color: '#12355b', text_color: '#ffffff' }],
+    },
+  },
+  [MDL_CONFIG_ID]: {
+    format: OpenId4VciCredentialFormatProfile.MsoMdoc,
+    doctype: MDL_DOCTYPE,
+    scope: 'mdl',
+    cryptographic_binding_methods_supported: ['cose_key'],
+    credential_signing_alg_values_supported: [-7], // ES256 as a COSE algorithm number
+    proof_types_supported: {
+      jwt: { proof_signing_alg_values_supported: [Kms.KnownJwaSignatureAlgorithms.ES256] },
+    },
+    credential_metadata: {
+      display: [{ name: 'Mobile Driving Licence (mDL)', locale: 'en', background_color: '#0b5d3b', text_color: '#ffffff' }],
     },
   },
 } satisfies OpenId4VciCredentialConfigurationsSupportedWithFormats;
@@ -71,6 +89,28 @@ export function licenceClaims(l: LicenceInput) {
     driving_privileges: l.categories.map(
       (c): DrivingPrivilege => ({ vehicle_category_code: c, issue_date: l.issue_date, expiry_date: l.expiry_date }),
     ),
+  };
+}
+
+/**
+ * The same claims as an mDL namespace. ISO 18013-5 encodes dates as CBOR full-date, so the date
+ * strings become DateOnly values. (A real mDL also needs a portrait; this demo leaves it out.)
+ */
+export function mdlNamespaces(claims: ReturnType<typeof licenceClaims>) {
+  const day = (d: string) => new DateOnly(d);
+  return {
+    [MDL_NAMESPACE]: {
+      ...claims,
+      birth_date: day(claims.birth_date),
+      issue_date: day(claims.issue_date),
+      expiry_date: day(claims.expiry_date),
+      un_distinguishing_sign: 'FIN',
+      driving_privileges: claims.driving_privileges.map((p) => ({
+        vehicle_category_code: p.vehicle_category_code,
+        issue_date: day(p.issue_date),
+        expiry_date: day(p.expiry_date),
+      })),
+    },
   };
 }
 

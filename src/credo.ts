@@ -10,6 +10,8 @@ export {
   X509Service,
   X509Module,
   SdJwtVcRecord,
+  MdocRecord,
+  DateOnly,
   type GenericRecord,
   type DcqlQuery,
 } from '@credo-ts/core';

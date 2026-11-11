@@ -6,7 +6,7 @@ import { createAgents } from './agents.ts';
 import { changeLicenceStatus, InputError, issueLicence, listLicences } from './authority.ts';
 import { CATEGORIES, LICENCE_VCT, VEHICLES } from './licence.ts';
 import { createRental, getRental } from './rental.ts';
-import { getStatusListToken, initStatusList, STATUS, type StatusName } from './statusList.ts';
+import { getMdocStatusList, getStatusListToken, initStatusList, STATUS, type StatusName } from './statusList.ts';
 import { declineRequest, deleteCredential, listCredentials, presentCredential, previewRequest, receiveCredential } from './wallet.ts';
 
 const app = express();
@@ -108,6 +108,11 @@ app.use('/api', api);
 // ---------- Status list (public, fetched by verifiers) ----------
 app.get('/status-lists/1', asyncRoute(async (_req, res) => {
   res.type('application/statuslist+jwt').set('Cache-Control', 'max-age=30').send(await getStatusListToken(issuerAgent));
+}));
+
+// The same list as a CWT, for mdoc (mDL) verifiers (ISO 18013-5 § 12.3.6).
+app.get('/status-lists/1/cwt', asyncRoute(async (_req, res) => {
+  res.type('application/statuslist+cwt').set('Cache-Control', 'max-age=30').send(Buffer.from(await getMdocStatusList(issuerAgent)));
 }));
 
 // Type metadata for the credential type (so wallets can display it).
