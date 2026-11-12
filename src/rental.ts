@@ -3,15 +3,21 @@ import { randomUUID } from 'node:crypto';
 import { OpenId4VcVerificationSessionState, type Agent, type DcqlQuery } from './credo.ts';
 import { pki, VERIFIER_ID } from './agents.ts';
 import { InputError } from './authority.ts';
-import { checkEligibility, LICENCE_VCT, RENTAL_REQUESTED_CLAIMS, VEHICLES, type Check } from './licence.ts';
+import { checkEligibility, LICENCE_VCT, MDL_DOCTYPE, MDL_NAMESPACE, RENTAL_REQUESTED_CLAIMS, VEHICLES, type Check } from './licence.ts';
 import { daysFromToday, isRealDate, today } from './dates.ts';
+import { plainClaims } from './mdocClaims.ts';
 
 export type RentalDecision = 'pending' | 'approved' | 'rejected' | 'expired';
+
+/** Which credential format the rental company asks for. Same licence data, same business rules. */
+export type LicenceFormat = 'sd-jwt' | 'mdoc';
+const FORMATS: LicenceFormat[] = ['sd-jwt', 'mdoc'];
 
 /** What we keep about a rental. Only the decision and the minimum needed for the contract. */
 export type RentalRecord = {
   id: string;
   vehicleId: string;
+  format?: LicenceFormat; // missing on rentals created before mdoc support (= sd-jwt)
   startDate: string;
   endDate: string;
   verificationSessionId: string;
@@ -26,21 +32,36 @@ export type RentalRecord = {
 const MAX_DAYS = 30;
 const MAX_DAYS_AHEAD = 365;
 
-const licenceQuery: DcqlQuery = {
-  credentials: [
-    {
-      id: 'driving_licence',
-      format: 'dc+sd-jwt',
-      meta: { vct_values: [LICENCE_VCT] },
-      // Ask ONLY for what the decision needs. Birth date, address and document number are never requested.
-      claims: RENTAL_REQUESTED_CLAIMS.map((claim) => ({ path: [claim] })),
-    },
-  ],
+// Ask ONLY for what the decision needs. Birth date, address and document number are never requested.
+const licenceQueries: Record<LicenceFormat, DcqlQuery> = {
+  'sd-jwt': {
+    credentials: [
+      {
+        id: 'driving_licence',
+        format: 'dc+sd-jwt',
+        meta: { vct_values: [LICENCE_VCT] },
+        claims: RENTAL_REQUESTED_CLAIMS.map((claim) => ({ path: [claim] })),
+      },
+    ],
+  },
+  // mDL: claims live in a namespace, so each path is [namespace, element]. We don't keep them after deciding.
+  mdoc: {
+    credentials: [
+      {
+        id: 'driving_licence',
+        format: 'mso_mdoc',
+        meta: { doctype_value: MDL_DOCTYPE },
+        claims: RENTAL_REQUESTED_CLAIMS.map((claim) => ({ path: [MDL_NAMESPACE, claim], intent_to_retain: false })),
+      },
+    ],
+  },
 };
 
-export async function createRental(agent: Agent, body: { vehicleId?: string; startDate?: string; endDate?: string }) {
+export async function createRental(agent: Agent, body: { vehicleId?: string; format?: string; startDate?: string; endDate?: string }) {
   const vehicle = VEHICLES.find((v) => v.id === body.vehicleId);
   if (!vehicle) throw new InputError('Choose a vehicle');
+  const format = (body.format ?? 'sd-jwt') as LicenceFormat;
+  if (!FORMATS.includes(format)) throw new InputError(`format must be one of: ${FORMATS.join(', ')}`);
   const { startDate, endDate } = body;
   if (!isRealDate(startDate) || !isRealDate(endDate)) throw new InputError('Choose real start and end dates');
   if (startDate < today()) throw new InputError('The rental cannot start in the past');
@@ -52,13 +73,14 @@ export async function createRental(agent: Agent, body: { vehicleId?: string; sta
   const { authorizationRequest, verificationSession } = await agent.openid4vc.verifier.createAuthorizationRequest({
     verifierId: VERIFIER_ID,
     requestSigner: { method: 'x5c', x5c: [pki.verifier], clientIdPrefix: 'x509_san_dns' },
-    dcql: { query: licenceQuery },
+    dcql: { query: licenceQueries[format] },
     responseMode: 'direct_post.jwt',
   });
 
   const rental: RentalRecord = {
     id: randomUUID(),
     vehicleId: vehicle.id,
+    format,
     startDate,
     endDate,
     verificationSessionId: verificationSession.id,
@@ -108,8 +130,13 @@ export async function getRental(agent: Agent, id: string) {
   // Signature, trust anchor, validity, holder binding (KB-JWT), nonce/audience and status list
   // were all checked by Credo before the session reached ResponseVerified.
   const verified = await agent.openid4vc.verifier.getVerifiedAuthorizationResponse(session.id);
-  const presentation = verified.dcql?.presentations?.driving_licence?.[0] as { prettyClaims?: Record<string, unknown> } | undefined;
-  const claims = presentation?.prettyClaims;
+  const presentation = verified.dcql?.presentations?.driving_licence?.[0] as
+    | { prettyClaims?: Record<string, unknown>; issuerClaims?: Record<string, Record<string, Record<string, unknown>>> }
+    | undefined;
+  // SD-JWT: the disclosed claims. mdoc: the issuer-signed elements of the mDL namespace (dates become YYYY-MM-DD).
+  const claims = presentation?.issuerClaims
+    ? (plainClaims(presentation.issuerClaims[MDL_DOCTYPE]?.[MDL_NAMESPACE]) as Record<string, unknown> | undefined)
+    : presentation?.prettyClaims;
   if (!claims) return save({ decision: 'rejected', reason: 'No driving licence was shared.' });
 
   const vehicle = VEHICLES.find((v) => v.id === rental.vehicleId)!;

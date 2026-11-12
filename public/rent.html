@@ -23,6 +23,13 @@
         <div><label for="startDate">Pick-up</label><input type="date" id="startDate"></div>
         <div><label for="endDate">Return</label><input type="date" id="endDate"></div>
       </div>
+      <div style="margin-top:12px">
+        <label for="format">Licence format to ask for</label>
+        <select id="format">
+          <option value="sd-jwt">SD-JWT VC (online, JSON)</option>
+          <option value="mdoc">mDL / mdoc, ISO 18013-5 (CBOR, also works in person)</option>
+        </select>
+      </div>
       <p class="error" id="rentError"></p>
       <button id="continueBtn">Continue: verify my licence</button>
     </div>
@@ -83,9 +90,9 @@
   $('#continueBtn').addEventListener('click', async () => {
     $('#rentError').textContent = '';
     try {
-      const r = await api('POST', '/rentals', { vehicleId: selected, startDate: $('#startDate').value, endDate: $('#endDate').value });
+      const r = await api('POST', '/rentals', { vehicleId: selected, format: $('#format').value, startDate: $('#startDate').value, endDate: $('#endDate').value });
       const v = vehicles.find((x) => x.id === selected);
-      $('#summary').innerHTML = `<b>${esc(v.name)}</b>, ${esc(r.rental.startDate)} → ${esc(r.rental.endDate)}`;
+      $('#summary').innerHTML = `<b>${esc(v.name)}</b>, ${esc(r.rental.startDate)} → ${esc(r.rental.endDate)} · asking for: <b>${r.rental.format === 'mdoc' ? 'mDL (mdoc)' : 'SD-JWT VC'}</b>`;
       $('#requestQr').src = r.requestQr;
       $('#requestUri').textContent = r.requestUri;
       $('#openWallet').href = `/wallet?request=${encodeURIComponent(r.requestUri)}`;

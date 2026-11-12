@@ -55,6 +55,7 @@
         <div style="font-size:18px;font-weight:700">${esc(c.name || 'Unknown holder')}</div>
         <div class="small">Categories: ${esc(c.categories.join(', '))} · Expires ${esc(c.expiryDate)}</div>
         <div class="small" style="margin-top:6px">Issued by: ${esc(c.issuerName)}</div>
+        <div class="small">Format: ${esc(c.format)}</div>
         <button class="small secondary" style="margin-top:10px" data-del="${esc(c.id)}">Remove</button>
       </div>`).join('') : '<p class="hint">No credentials yet. Get one from the licence office.</p>';
   }
@@ -103,7 +104,7 @@
       const matching = creds.filter((c) => p.matchingCredentialIds.includes(c.id));
       $('#choices').innerHTML = matching.length
         ? matching.map((c, i) => `<label class="checks" style="margin:6px 0"><input type="radio" name="cred" value="${esc(c.id)}" ${i === 0 ? 'checked' : ''}>
-            <b>${esc(c.name)}</b> · ${esc(c.categories.join(', '))} · expires ${esc(c.expiryDate)} · <span class="hint">issued by ${esc(c.issuerName)}</span></label>`).join('')
+            <b>${esc(c.name)}</b> · ${esc(c.format)} · ${esc(c.categories.join(', '))} · expires ${esc(c.expiryDate)} · <span class="hint">issued by ${esc(c.issuerName)}</span></label>`).join('')
         : '<p class="bad-mark">You have no driving licence that matches this request.</p>';
       $('#share').disabled = !matching.length;
     } catch (err) {

@@ -19,6 +19,7 @@
     "@credo-ts/node": "^0.7.4",
     "@credo-ts/openid4vc": "^0.7.4",
     "@openwallet-foundation/askar-nodejs": "^0.6.1",
+    "@owf/token-status-list": "0.4.2",
     "express": "^5.3.0",
     "qrcode": "^1.5.4",
     "tsx": "^4.23.15"
