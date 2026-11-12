@@ -87,6 +87,7 @@ src/
   index.ts       Express server: API routes, status list endpoint, static UI
   agents.ts      The three Credo agents, PKI (trust anchor + certificates), credential mapper
   licence.ts     Credential configurations (SD-JWT VC + mDL), claims, vehicles, eligibility rules
+  dates.ts       Date checks (real calendar days)
   mdocClaims.ts  Turns mdoc (CBOR) claims into plain JSON
   authority.ts   Issue licences (createCredentialOffer), list, revoke / suspend / reinstate
   statusList.ts  Token status list as JWT + CWT: create, allocate index, update status (serialised)
@@ -146,6 +147,8 @@ Koyeb works the same way (Dockerfile builder, port from `PORT`, set `BASE_URL` t
 | Licence from the untrusted office | ❌ not issued by a trusted authority |
 | Revoke → present again | ❌ revoked; reinstate → ✅ approved |
 | Issuing an already-expired licence | refused (400) |
+| Nonsense dates: issued in the future, 31 February, birth date in the future, B licence for a 12-year-old, valid until 9999 | refused (400) |
+| Rental with an impossible date or more than a year ahead | refused (400) |
 | Customer declines in the wallet | ❌ declined (OpenID4VP `access_denied`) |
 | **mDL (mdoc):** valid licence / wrong category / expiring / too young / untrusted issuer | ✅ / ❌ / ❌ / ❌ / ❌ |
 | **mDL:** revoke → present again (CWT status list), SD-JWT copy revoked too; reinstate | ❌ revoked; ✅ approved |

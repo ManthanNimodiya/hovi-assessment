@@ -83,6 +83,8 @@
   $('#startDate').value = isoDay(1);
   $('#endDate').value = isoDay(4);
   $('#startDate').min = isoDay(0);
+  $('#startDate').max = isoDay(365);
+  $('#endDate').min = isoDay(0);
 
   let poll;
   $('#continueBtn').addEventListener('click', async () => {

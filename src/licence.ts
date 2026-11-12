@@ -21,6 +21,12 @@ export const CATEGORIES: Record<string, string> = {
   D1: 'Minibus',
 };
 
+/** Minimum age to hold each category (EU Directive 2006/126/EC, simplified: no accompanied or progressive routes). */
+export const CATEGORY_MIN_AGE: Record<string, number> = { AM: 15, A: 20, B: 18, BE: 18, C1: 18, C: 21, D1: 21 };
+
+/** Longest validity a licence may have (EU: up to 15 years for A and B; C and D are shorter). */
+export const MAX_VALIDITY_YEARS = 15;
+
 export const credentialConfigurationsSupported = {
   [LICENCE_CONFIG_ID]: {
     format: OpenId4VciCredentialFormatProfile.SdJwtDc,
